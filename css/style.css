@@ -1,0 +1,25 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: sans-serif;
+    background: #000;
+}
+
+/* Background */
+#background {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none,
+}
+
+/* Actual page content */
+.content {
+    position: relative;
+    z-index: 1;
+    color: white;
+    padding: 4rem;
+    max-width: 800px;
+}
+
