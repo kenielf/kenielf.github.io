@@ -63,7 +63,7 @@ async function fetchUnlessCached(url, key) {
 async function fetchAllRepos() {
     while (true) {
         // const res = await fetch(apiUrl + page);
-        const res = await fetchUnlessCached(apiUrl + page, `repos:page:${page}`);
+        const repos = await fetchUnlessCached(apiUrl + page, `repos:page:${page}`);
         // const repos = await res.json();
 
         if (!Array.isArray(repos) || repos.length === 0) break;
