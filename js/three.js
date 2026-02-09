@@ -8,7 +8,10 @@ const camera = new THREE.PerspectiveCamera(
     0.1,
     1000
 );
-camera.position.z = 5;
+
+// Base (anchored) camera position
+const cameraBasePosition = new THREE.Vector3(0, 0, 5);
+camera.position.copy(cameraBasePosition);
 
 // Renderer
 const renderer = new THREE.WebGLRenderer({
@@ -119,15 +122,42 @@ const FPS = 120;
 const FRAME_TIME = 1000 / FPS;
 let lastTime = 0;
 
+const mouse = { x: 0, y: 0 };
+
+window.addEventListener('mousemove', (event) => {
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+});
+
+
+const cameraOffset = new THREE.Vector3();
+
+const PARALLAX_STRENGTH = 0.4; // adjust for intensity
+const CAMERA_SMOOTHING = 0.05; // lower = smoother
+
 function animate(time) {
     requestAnimationFrame(animate);
 
     if (time - lastTime < FRAME_TIME) return;
     lastTime = time;
 
-    // animation updates
+    // particle motion
     particles.rotation.y += 0.0008;
     particles.rotation.x += 0.0004;
+
+    // camera parallax (center-anchored)
+    cameraOffset.set(
+        mouse.x * PARALLAX_STRENGTH,
+        mouse.y * PARALLAX_STRENGTH,
+        0
+    );
+
+    camera.position.lerp(
+        cameraBasePosition.clone().add(cameraOffset),
+        CAMERA_SMOOTHING
+    );
+
+    camera.lookAt(0, 0, 0);
 
     renderer.render(scene, camera);
 }
