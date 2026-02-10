@@ -3,7 +3,7 @@ const apiUrl = `https://api.github.com/users/${username}/repos?per_page=25&page=
 const prefix = `${username}/iac`;
 const projectsContainer = document.querySelector('.infra');
 
-const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_TTL_MS = 25 * 60 * 1000;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let allRepos = [];
