@@ -19,6 +19,7 @@ async function fetchUnlessCached(url, key) {
             const cached = JSON.parse(cachedRaw);
 
             if (Date.now() < cached.expiresAt) {
+                console.log("Using cached data");
                 return cached.data;
             }
 
@@ -31,6 +32,7 @@ async function fetchUnlessCached(url, key) {
     }
 
     // 2. Fetch from network
+    console.log("Fetching from network data");
     const res = await fetch(url, {
         headers: {
             Accept: "application/vnd.github+json",
