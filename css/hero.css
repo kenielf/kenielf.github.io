@@ -23,18 +23,16 @@
     display: inline-block;
     overflow: hidden;
     height: calc(var(--hero-font-size) * var(--hero-line-height));
-    transform: translateZ(0);
     vertical-align: bottom;
     /* FIXME: Clipping is jittery. */
-    /* mask-size: 100% 100%; */
-    /* mask-repeat: no-repeat; */
-    /* mask-image: linear-gradient( */
-    /*     to bottom, */
-    /*     transparent 0%, */
-    /*     black 15%, */
-    /*     black 85%, */
-    /*     transparent 100% */
-    /* ); */
+    mask-size: 100% 100%;
+    mask-image: linear-gradient(
+        to bottom,
+        transparent 0%,
+        black 15%,
+        black 85%,
+        transparent 100%
+    );
 }
 
 .hero-switcher span {
