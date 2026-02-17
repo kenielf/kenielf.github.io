@@ -1,9 +1,18 @@
+:root {
+    --background: hsl(210, 40%,  5%);
+    --foreground: hsl(0,    0%, 95%);
+    --accent:     hsl(265, 40%, 50%);
+    --success:    hsl(100, 40%, 50%);
+    --failure:    hsl(0,   40%, 50%);
+    --warn:       hsl(60,  65%, 50%);
+}
+
 html, body {
     margin: 0;
     padding: 0;
     height: 100%;
     font-family: sans-serif;
-    background: #000;
+    background: var(--background);
 }
 
 /* Background */
@@ -18,8 +27,7 @@ html, body {
 .content {
     position: relative;
     z-index: 1;
-    color: white;
-    padding: 4rem;
-    max-width: 800px;
+    padding: 5%;
+    max-width: 100%;
 }
 

@@ -1,0 +1,61 @@
+:root {
+    --hero-font-size: 4.5rem;
+    --hero-line-height: 1.2;
+    --hero-animation-duration: 10s;
+}
+
+.hero {
+    width: 100%;
+    max-width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.hero-text {
+    font-family: var(--font-header);
+    font-size: var(--hero-font-size);
+    line-height: var(--hero-line-height);
+    user-select: none;
+}
+
+
+.hero-switcher {
+    display: inline-block;
+    overflow: hidden;
+    height: calc(var(--hero-font-size) * var(--hero-line-height));
+    transform: translateZ(0);
+    vertical-align: bottom;
+    /* FIXME: Clipping is jittery. */
+    /* mask-size: 100% 100%; */
+    /* mask-repeat: no-repeat; */
+    /* mask-image: linear-gradient( */
+    /*     to bottom, */
+    /*     transparent 0%, */
+    /*     black 15%, */
+    /*     black 85%, */
+    /*     transparent 100% */
+    /* ); */
+}
+
+.hero-switcher span {
+    display: block;
+    text-align: center;
+}
+
+.hero-switcher-inner {
+    display: inline-block;
+    justify-content: center;
+    animation: hero-scroll-text var(--hero-animation-duration) ease-in-out infinite;
+    will-change: transform;
+}
+
+/* NOTE:
+ * Values here are chosen with the following criteria:
+ * - word_index * (100% / (#words) - 1.5);
+ */
+@keyframes hero-scroll-text {
+    0%   { transform: translateY(0%); }
+    33%  { transform: translateY(calc(-23.5%)); }
+    66%  { transform: translateY(calc(-48.5%)); }
+    100% { transform: translateY(calc(-73.5%)); }
+}

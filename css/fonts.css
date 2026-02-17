@@ -1,0 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=Raleway:wght@700&family=Libre+Franklin:wght@400&display=swap');
+
+:root {
+    /* Font families */
+    --font-header: 'Raleway', sans-serif;
+    --font-body: 'Libre Franklin', sans-serif;
+
+    /* Font weights */
+    --weight-header: 700;
+    --weight-body: 400;
+
+    /* Letter spacing */
+    --tracking-header: -0.01em;
+    --tracking-body: -0.005em;
+
+    /* Font sizes */
+    --font-size-body: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+    --line-height-body: 1.6;
+}
+
+body {
+    font-family: var(--font-body);
+    font-weight: var(--weight-body);
+    letter-spacing: var(--tracking-body);
+    font-size: var(--font-size-body);
+    line-height: var(--line-height-body);
+    color: var(--foreground);
+}
+
+h1, h2, h3 {
+    font-family: var(--font-header);
+    font-weight: var(--weight-header);
+    letter-spacing: var(--tracking-header);
+    margin: 0 0 0.5em 0;
+}
+
+h1 {
+    font-size: clamp(2.75rem, 3.6vw, 5.25rem);
+    line-height: 1.1;
+    padding-top: 0.25em;
+}
+
+h2 {
+    font-size: clamp(1.5rem, 2.8vw, 3rem);
+    line-height: 1.2;
+}
+
+h3 {
+    font-size: clamp(1.25rem, 2vw, 2rem);
+    line-height: 1.25;
+}
+

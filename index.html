@@ -4,10 +4,12 @@
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Kenielf - Portfolio</title>
-        <link href="css/style.css" rel="stylesheet">
+        <!-- Styles -->
+        <link href="css/style.css" rel="stylesheet"> <!-- Common -->
+        <link href="css/fonts.css" rel="stylesheet"> <!-- Fonts -->
+        <link href="css/hero.css" rel="stylesheet"> <!-- Hero Section -->
+        <!-- Libraries -->
         <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
-        <!-- <script src="js/three.js"></script> -->
-        <script src="js/github.js" defer></script>
     </head>
     <body>
         <!-- Background Tether -->
@@ -16,7 +18,26 @@
 
         <!-- Content -->
         <div class="content">
+            <div class="hero" aria-label="Building reliable, observable and predictable systems">
+                <span class="hero-text">
+                    Building
+                    <span class="hero-switcher">
+                        <span class="hero-switcher-inner">
+                            <span>Reliable</span>
+                            <span>Observable</span>
+                            <span>Predictable</span>
+                            <span>Reliable</span>
+                        </span>
+                    </span>
+                    Systems
+                </span>
+            </div>
+
             <h1>About Me</h1>
+            I’m an early-career engineer interested in how systems behave in real production environments.
+            I focus on building simple, reliable solutions across infrastructure and application layers, with particular attention to observability, cost, and failure modes.
+            I build projects to better understand performance, system design, and day-to-day operational concerns.
+
             <h1>Projects</h1>
             <h2>Infra</h2>
             <div class="infra" infra></div>
