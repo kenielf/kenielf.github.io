@@ -6,6 +6,7 @@
 
 .hero {
     width: 100%;
+    text-align: center;
     max-width: fit-content;
     margin-left: auto;
     margin-right: auto;
@@ -56,5 +57,5 @@
     0%   { transform: translateY(0%); }
     33%  { transform: translateY(calc(-23.5%)); }
     66%  { transform: translateY(calc(-48.5%)); }
-    100% { transform: translateY(calc(-73.5%)); }
+    100% { transform: translateY(calc(-75.0%)); }
 }
