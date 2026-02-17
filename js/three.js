@@ -129,18 +129,9 @@ function updateRelativeCameraPosition(x, y) {
     mouse.y = -(y / window.innerHeight) * 2 + 1;
 }
 
-window.addEventListener('mousemove', (event) => {
-    updateRelativeCameraPosition(event.clientX, event.clientY)
+window.addEventListener('pointermove', (event) => {
+    updateRelativeCameraPosition(event.clientX, event.clientY);
 });
-
-window.addEventListener('touchmove', (event) => {
-    event.preventDefault();
-    const touch = event.touches[0];
-    if (touch) {
-        updateRelativeCameraPosition(touch.clientX, touch.clientY);
-    }
-    }, { passive: false }
-);
 
 const cameraOffset = new THREE.Vector3();
 
