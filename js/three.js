@@ -124,6 +124,22 @@ let lastTime = 0;
 
 const mouse = { x: 0, y: 0 };
 
+function updateRelativeCameraPosition(x, y) {
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+}
+
+window.addEventListener('mousemove', (event) => {
+    updateRelativeCameraPosition(event.clientX, event.clientY)
+});
+
+window.addEventListener('touchmove', (event) => {
+    event.preventDefault();
+    const touch = event.touches[0];
+    updateRelativeCameraPosition(touch.clientX, touch.clientY)
+    }, { passive: false }
+);
+
 window.addEventListener('mousemove', (event) => {
     mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
