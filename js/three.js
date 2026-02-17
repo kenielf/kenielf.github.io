@@ -130,8 +130,12 @@ function updateRelativeCameraPosition(x, y) {
 }
 
 window.addEventListener('pointermove', (event) => {
+    if (event.pointerType === 'touch') {
+        event.preventDefault();
+    }
+
     updateRelativeCameraPosition(event.clientX, event.clientY);
-});
+}, { passive: false });
 
 const cameraOffset = new THREE.Vector3();
 
