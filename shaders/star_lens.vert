@@ -19,9 +19,11 @@ if (gl_Position.w > 0.0 && uLensEinstein > 0.0) {
     vec2 rel = (gl_Position.xy / gl_Position.w - uLensCenter) * aspect;
     float beta = max(length(rel), 1e-5);
 
-    float root = sqrt(beta * beta + 4.0 * uLensEinstein * uLensEinstein);
-    float u = beta / uLensEinstein;
-    float muCommon = (u * u + 2.0) / (2.0 * u * sqrt(u * u + 4.0));
+    // sqrt(u² + 4) = root / thetaE, so mu shares root's sqrt:
+    //   (u² + 2) / (2u sqrt(u² + 4)) = (beta² + 2 thetaE²) / (2 beta root)
+    float einstein2 = uLensEinstein * uLensEinstein;
+    float root = sqrt(beta * beta + 4.0 * einstein2);
+    float muCommon = (beta * beta + 2.0 * einstein2) / (2.0 * beta * root);
 
     #ifdef LENS_SECONDARY
         float theta = 0.5 * (beta - root); // negative: opposite side of the hole

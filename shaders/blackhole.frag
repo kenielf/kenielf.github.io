@@ -26,6 +26,13 @@ vec3 blackbody(float t) {
     return clamp(c, 0.0, 1.0);
 }
 
+// Null geodesic in Schwarzschild: a = -3/2 h² x / r⁵, given r2 = |x|².
+// r⁻⁵ = r⁻⁴ · r⁻¹ from one inversesqrt, instead of pow(r2, 2.5) (exp2 + log2)
+vec3 gravity(vec3 pos, float r2, float h2) {
+    float invR2 = 1.0 / r2;
+    return (-1.5 * h2 * invR2 * invR2 * inversesqrt(r2)) * pos;
+}
+
 // Traces a single ray (in disk space). Returns premultiplied color + coverage.
 vec4 trace(vec3 ro, vec3 rd, float pixelAtHole) {
     // Jump straight to the bounding sphere
@@ -52,25 +59,27 @@ vec4 trace(vec3 ro, vec3 rd, float pixelAtHole) {
     vec3 color = vec3(0.0);
     float alpha = 0.0;
 
-    // Null geodesic in Schwarzschild: a = -3/2 h² x / r⁵
-    vec3 acc = -1.5 * h2 * pos / pow(dot(pos, pos), 2.5);
+    // Only r² is ever needed (tests, step size, gravity): no sqrt per step.
+    // It's carried over from the force evaluation of the previous step.
+    float r2 = dot(pos, pos);
+    vec3 acc = gravity(pos, r2, h2);
 
     for (int i = 0; i < MAX_STEPS; i++) {
-        float r = length(pos);
-        if (r < 1.0) break; // fell through the horizon
-        if (r > R_BOUND && dot(pos, vel) > 0.0) break; // escaped
+        if (r2 < 1.0) break; // fell through the horizon
+        if (r2 > R_BOUND * R_BOUND && dot(pos, vel) > 0.0) break; // escaped
         if (alpha > 0.99) break;
 
         // smaller steps close in, where the bending is strongest
-        float dt = clamp(0.04 * r * r, 0.01, 0.8);
+        float dt = clamp(0.04 * r2, 0.01, 0.8);
 
         // NOTE: Fixes a noisy, broken-up photon ring (part 1: integration error).
         // leapfrog (velocity Verlet): stays accurate for rays that loop
         // around the photon sphere, where plain Euler drifts and the
         // photon ring turns noisy
         vec3 prev = pos;
-        pos += vel * dt + 0.5 * acc * dt * dt;
-        vec3 accNext = -1.5 * h2 * pos / pow(dot(pos, pos), 2.5);
+        pos += (vel + 0.5 * dt * acc) * dt;
+        r2 = dot(pos, pos);
+        vec3 accNext = gravity(pos, r2, h2);
         vel += 0.5 * (acc + accNext) * dt;
         acc = accNext;
         travelled += dt;
@@ -82,35 +91,43 @@ vec4 trace(vec3 ro, vec3 rd, float pixelAtHole) {
             if (hr > R_IN && hr < R_OUT) {
                 vec3 dir = normalize(vel);
 
-                // Thin-disk temperature profile (peaks just outside the ISCO)
-                float profile = pow(R_IN / hr, 0.75) * pow(1.0 - sqrt(R_IN / hr), 0.25);
-                profile /= 0.488; // normalize peak to 1
+                // x = R_IN / r and its square root are shared by the profile
+                // and the swirl: every pow() below is built from them
+                float x = R_IN / hr;
+                float sx = sqrt(x);
 
-                // Keplerian orbit, as seen by a static observer
-                float beta = sqrt(0.5 / (hr - 1.0));
-                vec3 orbit = normalize(vec3(hit.z, 0.0, -hit.x));
-                float cosTheta = dot(orbit, -dir); // photon travels towards the camera
-                float gamma = inversesqrt(1.0 - beta * beta);
+                // Thin-disk temperature profile (peaks just outside the ISCO):
+                // x^(3/4) (1 - √x)^(1/4), peak normalized to 1
+                float profile = sx * sqrt(sx) * sqrt(sqrt(1.0 - sx)) / 0.488;
 
-                // Doppler shift + gravitational redshift
-                float g = sqrt(1.0 - 1.0 / hr) / (gamma * (1.0 - beta * cosTheta));
+                // Keplerian orbit, as seen by a static observer. The orbit's
+                // direction is (z, 0, -x) / r, so cos(theta) needs no normalize
+                // (photon travels towards the camera, hence -dir)
+                float beta2 = 0.5 / (hr - 1.0);
+                float cosTheta = (hit.x * dir.z - hit.z * dir.x) / hr;
 
-                // Turbulence (orbit runs towards decreasing atan(z, x))
+                // Doppler shift + gravitational redshift:
+                // g = sqrt(1 - 1/r) / (gamma (1 - beta cos)), with 1/gamma = sqrt(1 - beta²)
+                float g = sqrt((1.0 - 1.0 / hr) * (1.0 - beta2)) / (1.0 - sqrt(beta2) * cosTheta);
+
+                // Turbulence (orbit runs towards decreasing atan(z, x), i.e. the
+                // swirl's angle is -atan(z, x), passed as its unit vector)
                 float footprint = uPixelAngle * travelled / max(abs(dir.y), 0.08);
-                float n = swirl(-atan(hit.z, hit.x), hr * 0.3, R_IN * 0.3, uTime, footprint * 0.3);
+                float n = swirl(vec2(hit.x, -hit.z) / hr, hr * 0.3, x * sx, uTime, footprint * 0.3);
 
                 float t = (hr - R_IN) / (R_OUT - R_IN);
                 float density = smoothstep(0.0, 0.02, t) * (1.0 - smoothstep(0.5, 1.0, t))
                               * (0.35 + 1.0 * n);
 
                 // brightness ∝ T⁴, so the outer disk fades out quickly
+                float profile2 = profile * profile;
                 vec3 emitted = blackbody(TEMPERATURE * profile * g)
-                             * pow(profile, 4.0) * pow(g, BEAMING);
+                             * (profile2 * profile2) * pow(g, BEAMING);
 
                 // NOTE: Fixes a dark ellipse around the disk over the page background.
                 // opacity follows brightness: the dim outer disk is see-through
                 // instead of a dark ellipse over the page background
-                float a = clamp(density * profile * profile * 1.5, 0.0, 1.0);
+                float a = clamp(density * profile2 * 1.5, 0.0, 1.0);
                 color += (1.0 - alpha) * a * emitted * density * 1.4;
                 alpha += (1.0 - alpha) * a;
             }
@@ -138,7 +155,8 @@ void main() {
     // Ray from the camera through this pixel, in disk space
     mat3 toDisk = mat3(uWorldToDisk);
     vec3 ro = (uWorldToDisk * vec4(cameraPosition, 1.0)).xyz;
-    vec3 rd = normalize(toDisk * (vWorld - cameraPosition));
+    vec3 ray = toDisk * (vWorld - cameraPosition);
+    vec3 rd = normalize(ray);
 
     // cheap early out for pixels whose ray misses the bounding sphere
     float b = dot(ro, rd);
@@ -155,11 +173,13 @@ void main() {
     vec4 result;
     float band = 3.0 * pixelAtHole;
     if (impact > B_CRIT - band && impact < B_CRIT + RING_BAND + band) {
-        // rotated-grid 4x
-        result = trace(ro, normalize(toDisk * (vWorld - 0.125 * dx - 0.375 * dy - cameraPosition)), pixelAtHole)
-               + trace(ro, normalize(toDisk * (vWorld + 0.375 * dx - 0.125 * dy - cameraPosition)), pixelAtHole)
-               + trace(ro, normalize(toDisk * (vWorld + 0.125 * dx + 0.375 * dy - cameraPosition)), pixelAtHole)
-               + trace(ro, normalize(toDisk * (vWorld - 0.375 * dx + 0.125 * dy - cameraPosition)), pixelAtHole);
+        // rotated-grid 4x (the transform is linear: map the pixel steps once)
+        vec3 rx = toDisk * dx;
+        vec3 ry = toDisk * dy;
+        result = trace(ro, normalize(ray - 0.125 * rx - 0.375 * ry), pixelAtHole)
+               + trace(ro, normalize(ray + 0.375 * rx - 0.125 * ry), pixelAtHole)
+               + trace(ro, normalize(ray + 0.125 * rx + 0.375 * ry), pixelAtHole)
+               + trace(ro, normalize(ray - 0.375 * rx + 0.125 * ry), pixelAtHole);
         result *= 0.25;
     } else {
         result = trace(ro, rd, pixelAtHole);

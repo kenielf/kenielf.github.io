@@ -790,16 +790,14 @@ function animate(time) {
     starUniforms.uTime.value = time * 0.001;
 
     // camera parallax (center-anchored)
+    // (reuses one vector: no allocation per frame)
     cameraOffset.set(
         mouse.x * PARALLAX_STRENGTH,
         mouse.y * PARALLAX_STRENGTH,
         0
-    );
+    ).add(cameraBasePosition);
 
-    camera.position.lerp(
-        cameraBasePosition.clone().add(cameraOffset),
-        CAMERA_SMOOTHING
-    );
+    camera.position.lerp(cameraOffset, CAMERA_SMOOTHING);
 
     camera.lookAt(0, 0, 0);
 
