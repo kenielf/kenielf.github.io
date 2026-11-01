@@ -56,6 +56,13 @@ vec4 trace(vec3 ro, vec3 rd, float pixelAtHole) {
     float edge = pixelAtHole + EDGE_SOFTNESS;
     float shadow = 1.0 - smoothstep(B_CRIT - edge, B_CRIT + edge, impact);
 
+    // Captured rays (b < B_CRIT) have no turning point: once inside the disk's
+    // inner edge they only fall further in, and the disk is only at r > R_IN,
+    // so nothing past that point can reach this pixel. Only for rays clearly
+    // inside the shadow edge, so near-critical rays (the photon ring) still
+    // get the full integration.
+    float stop2 = impact < B_CRIT - edge ? R_IN * R_IN : 1.0;
+
     vec3 color = vec3(0.0);
     float alpha = 0.0;
 
@@ -65,7 +72,7 @@ vec4 trace(vec3 ro, vec3 rd, float pixelAtHole) {
     vec3 acc = gravity(pos, r2, h2);
 
     for (int i = 0; i < MAX_STEPS; i++) {
-        if (r2 < 1.0) break; // fell through the horizon
+        if (r2 < stop2) break; // fell in (or can no longer reach the disk)
         if (r2 > R_BOUND * R_BOUND && dot(pos, vel) > 0.0) break; // escaped
         if (alpha > 0.99) break;
 
