@@ -52,13 +52,20 @@ html, body {
     max-width: 100%;
 }
 
+/* "About Me" is the page's lead paragraph (see fonts.css) */
+.about {
+    font-size: var(--font-size-lead);
+    line-height: var(--line-height-lead);
+    max-width: var(--measure);
+}
+
 /* Keep "About Me" clear of the black hole's disk so it stays legible.
  * --blackhole-left is set by js/three.js; 5vw is .content's left padding.
  * Only on landscape screens: in portrait the disk spans most of the width,
  * so the text uses the full width instead of a narrow column. */
 @media (orientation: landscape) {
     .about {
-        max-width: max(20rem, calc(var(--blackhole-left, 100vw) - 5vw - 2rem));
+        max-width: min(var(--measure), max(20rem, calc(var(--blackhole-left, 100vw) - 5vw - 2rem)));
     }
 }
 

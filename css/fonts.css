@@ -16,6 +16,10 @@
     /* Font sizes */
     --font-size-body: clamp(1.125rem, 1.05rem + 0.35vw, 1.3rem);
     --line-height-body: 1.6;
+    --font-size-lead: clamp(1.3rem, 1.2rem + 0.5vw, 1.55rem);
+    --line-height-lead: 1.5;
+
+    --measure: 65ch;
 }
 
 body {
