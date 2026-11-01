@@ -48,28 +48,31 @@ function detectAcceleration() {
     return { enabled: !SOFTWARE_RENDERERS.test(renderer), renderer };
 }
 
-const { enabled, renderer } = detectAcceleration();
-const message = `DEBUG: Hardware Acceleration is ${enabled ? 'Enabled' : 'Disabled'}`;
+// Badge + live stats, only with ?debug (also skips the extra WebGL context)
+const stats = document.createElement('div');
+let gpuName = '';
 
-console.log(`${message} (${renderer})`);
+if (DEBUG) {
+    const { enabled, renderer } = detectAcceleration();
+    gpuName = renderer;
+    const message = `DEBUG: Hardware Acceleration is ${enabled ? 'Enabled' : 'Disabled'}`;
 
-const badge = document.createElement('div');
-badge.className = 'debug-badge';
-badge.classList.add(enabled ? 'debug-badge--ok' : 'debug-badge--off');
-badge.textContent = message;
-badge.title = renderer;
-document.body.appendChild(badge);
+    console.log(`${message} (${renderer})`);
+
+    const badge = document.createElement('div');
+    badge.className = 'debug-badge';
+    badge.classList.add(enabled ? 'debug-badge--ok' : 'debug-badge--off');
+    badge.textContent = message;
+    badge.title = renderer;
+    document.body.appendChild(badge);
+
+    stats.className = 'debug-stats';
+    stats.textContent = renderer;
+    badge.append(stats);
+}
 
 if (!flagParam('vignette')) {
     document.documentElement.classList.add('no-vignette');
-}
-
-// Live stats (only with ?debug)
-const stats = document.createElement('div');
-if (DEBUG) {
-    stats.className = 'debug-stats';
-    badge.append(stats);
-    stats.textContent = renderer;
 }
 
 let renderInfo = '';
@@ -98,7 +101,7 @@ export function reportFrame(time) {
     const fps = frames * 1000 / elapsed;
     stats.textContent =
         `${fps.toFixed(0)} fps · ${(elapsed / frames).toFixed(1)} ms avg · ${worst.toFixed(1)} ms worst\n` +
-        `${renderInfo}\n${renderer}`;
+        `${renderInfo}\n${gpuName}`;
 
     frames = 0;
     worst = 0;
