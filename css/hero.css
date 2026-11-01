@@ -26,6 +26,8 @@
 
 .hero-text {
     font-family: var(--font-header);
+    font-weight: var(--weight-header);
+    letter-spacing: var(--tracking-header);
     font-size: var(--hero-font-size);
     line-height: var(--hero-line-height);
     white-space: nowrap;

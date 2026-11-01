@@ -1,9 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Raleway:wght@700&family=Libre+Franklin:wght@400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap');
 
 :root {
     /* Font families */
-    --font-header: 'Raleway', sans-serif;
-    --font-body: 'Libre Franklin', sans-serif;
+    --font-header: 'Libre Franklin', sans-serif;
+    --font-body: 'Crimson Text', serif;
 
     /* Font weights */
     --weight-header: 700;
@@ -11,10 +11,10 @@
 
     /* Letter spacing */
     --tracking-header: -0.01em;
-    --tracking-body: -0.005em;
+    --tracking-body: 0.005em; /* serifs read better slightly open */
 
     /* Font sizes */
-    --font-size-body: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+    --font-size-body: clamp(1.125rem, 1.05rem + 0.35vw, 1.3rem);
     --line-height-body: 1.6;
 }
 
