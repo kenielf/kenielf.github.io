@@ -5,6 +5,11 @@
     --success:    hsl(100, 40%, 50%);
     --failure:    hsl(0,   40%, 50%);
     --warn:       hsl(60,  65%, 50%);
+
+    /* 4-spike star, same shape as createStarTexture() in js/three.js:
+     * outer radius 0.48, inner 0.05, spikes fading to the tips + soft core.
+     * Used as a mask so it can be tinted with background-color. */
+    --star-shape: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-50 -50 100 100'><defs><radialGradient id='s' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='48'><stop offset='0' stop-opacity='1'/><stop offset='.3' stop-opacity='.6'/><stop offset='1' stop-opacity='0'/></radialGradient><radialGradient id='c' gradientUnits='userSpaceOnUse' cx='0' cy='0' r='14'><stop offset='0' stop-opacity='1'/><stop offset='.4' stop-opacity='.5'/><stop offset='1' stop-opacity='0'/></radialGradient></defs><path fill='url(%23s)' d='M0-48 3.54-3.54 48 0 3.54 3.54 0 48-3.54 3.54-48 0-3.54-3.54Z'/><circle fill='url(%23c)' r='14'/></svg>");
 }
 
 html, body {
@@ -47,3 +52,54 @@ html, body {
     max-width: 100%;
 }
 
+/* Keep "About Me" clear of the black hole's disk so it stays legible.
+ * --blackhole-left is set by js/three.js; 5vw is .content's left padding.
+ * Only on landscape screens: in portrait the disk spans most of the width,
+ * so the text uses the full width instead of a narrow column. */
+@media (orientation: landscape) {
+    .about {
+        max-width: max(20rem, calc(var(--blackhole-left, 100vw) - 5vw - 2rem));
+    }
+}
+
+
+/* Star marker beside section titles */
+h1::before {
+    content: "";
+    display: inline-block;
+    width: 0.8em;
+    height: 0.8em;
+    margin-right: 0.3em;
+    vertical-align: -0.04em;
+    background-color: currentColor;
+    mask: var(--star-shape) center / contain no-repeat;
+}
+
+/* DEBUG: hardware acceleration badge (js/debug.js) */
+.debug-badge {
+    position: fixed;
+    left: 0.75rem;
+    bottom: 0.75rem;
+    z-index: 10;
+    padding: 0.25em 0.6em;
+    border-radius: 0.4em;
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--foreground);
+    background: hsla(210, 40%, 5%, 0.6);
+    border: 1px solid currentColor;
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.debug-stats {
+    white-space: pre;
+    color: var(--foreground);
+}
+
+.no-vignette #background::after {
+    display: none;
+}
+
+.debug-badge--ok  { color: var(--success); }
+.debug-badge--off { color: var(--failure); }

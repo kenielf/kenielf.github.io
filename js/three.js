@@ -1,3 +1,5 @@
+import { flagParam, numberParam, reportFrame, setRenderInfo } from './debug.js';
+
 // Scene
 const scene = new THREE.Scene();
 
@@ -15,14 +17,19 @@ camera.position.copy(cameraBasePosition);
 
 // Renderer
 const renderer = new THREE.WebGLRenderer({
-    antialias: true,
+    antialias: flagParam('aa'),
     alpha: true // allows CSS background to show through
 });
 // capped: the black hole is ray traced per pixel, 3x screens would triple the cost
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// ?dpr=<n> overrides it (see js/debug.js), handy to check if we're fill-rate bound
+renderer.setPixelRatio(numberParam('dpr', Math.min(window.devicePixelRatio, 2)));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 document.getElementById('background').appendChild(renderer.domElement);
+
+// Frame rate cap; ?fps=<n> overrides it (see js/debug.js)
+const FPS = numberParam('fps', 120);
+const FRAME_TIME = 1000 / FPS;
 
 // Shaders
 // GLSL lives in shaders/ as plain files. Shared pieces are registered as
@@ -40,23 +47,33 @@ const [
     noiseChunk,
     starDriftParsChunk,
     starDriftChunk,
+    starLensParsChunk,
+    starLensChunk,
     blackHoleVertexShader,
     blackHoleFragmentShader,
     bloomVertexShader,
-    bloomFragmentShader
+    bloomFragmentShader,
+    compositeVertexShader,
+    compositeFragmentShader
 ] = await Promise.all([
     'noise.glsl',
     'star_drift_pars.vert',
     'star_drift.vert',
+    'star_lens_pars.vert',
+    'star_lens.vert',
     'blackhole.vert',
     'blackhole.frag',
     'bloom.vert',
-    'bloom.frag'
+    'bloom.frag',
+    'composite.vert',
+    'composite.frag'
 ].map(loadShader));
 
 THREE.ShaderChunk.bh_noise = noiseChunk;
 THREE.ShaderChunk.star_drift_pars_vertex = starDriftParsChunk;
 THREE.ShaderChunk.star_drift_vertex = starDriftChunk;
+THREE.ShaderChunk.star_lens_pars_vertex = starLensParsChunk;
+THREE.ShaderChunk.star_lens_vertex = starLensChunk;
 
 // `defines` values are pasted into GLSL as-is: floats need a decimal point
 const glslFloat = (value) => value.toFixed(6);
@@ -158,7 +175,11 @@ const STAR_DRIFT_SPEED_MIN = 0.002; // radians per second
 const STAR_DRIFT_SPEED_MAX = 0.012;
 
 const starUniforms = {
-    uTime: { value: 0 }
+    uTime:         { value: 0 },
+    // gravitational lensing by the black hole (updated in updateBlackHole)
+    uLensCenter:   { value: new THREE.Vector2() },
+    uLensEinstein: { value: 0 },
+    uLensAspect:   { value: 1 }
 };
 
 function createStarLayer(count, size, opacity) {
@@ -200,6 +221,15 @@ function createStarLayer(count, size, opacity) {
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.setAttribute('aDrift', new THREE.BufferAttribute(drift, 4));
 
+    // Lensing splits every star into two images (see shaders/star_lens.vert),
+    // so the same geometry is drawn twice: primary and secondary image.
+    const layer = new THREE.Group();
+    layer.add(new THREE.Points(geometry, createStarMaterial(size, opacity, false)));
+    layer.add(new THREE.Points(geometry, createStarMaterial(size, opacity, true)));
+    return layer;
+}
+
+function createStarMaterial(size, opacity, secondaryImage) {
     const material = new THREE.PointsMaterial({
         map: starTexture,
         transparent: true,
@@ -218,21 +248,27 @@ function createStarLayer(count, size, opacity) {
         blendDstAlpha: THREE.OneFactor
     });
 
-    // Rotate drifting stars around their axis on the GPU (Rodrigues' formula)
+    if (secondaryImage) {
+        material.defines = { LENS_SECONDARY: '' };
+    }
+
+    // Drift (rotate around each star's own axis) and lensing, on the GPU
     material.onBeforeCompile = (shader) => {
-        shader.uniforms.uTime = starUniforms.uTime;
+        Object.assign(shader.uniforms, starUniforms);
         shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', '#include <common>\n#include <star_drift_pars_vertex>')
-            .replace('#include <begin_vertex>', '#include <begin_vertex>\n#include <star_drift_vertex>');
+            .replace('#include <common>', '#include <common>\n#include <star_drift_pars_vertex>\n#include <star_lens_pars_vertex>')
+            .replace('#include <begin_vertex>', '#include <begin_vertex>\n#include <star_drift_vertex>')
+            .replace('#include <fog_vertex>', '#include <fog_vertex>\n#include <star_lens_vertex>');
     };
 
-    return new THREE.Points(geometry, material);
+    return material;
 }
 
 // Only a slice of the shell is ever on screen, hence the higher counts
 const particles = new THREE.Group();
 particles.add(createStarLayer(6000, 6, 0.6));   // faint background dust
 particles.add(createStarLayer(400, 14, 0.9));   // a few bright stars
+particles.visible = flagParam('stars');
 scene.add(particles);
 
 // Slow drift of the whole sky around a slightly tilted axis
@@ -248,10 +284,15 @@ const STAR_AXIS_TILT = 0.35;                       // radians
 // Units: Schwarzschild radius Rs = 1 (event horizon at r = 1, photon sphere
 // at r = 1.5, shadow radius = 3√3/2 ≈ 2.6, innermost stable orbit at r = 3).
 // NOTE: Black hole center in NDC (-1..1, y up): landscape sits at 75% width, mid
-// height; portrait ("vertical" screens) puts it at 75% width, 60% from the top
+// height; portrait ("vertical" screens) puts it at 75% width, 25% from the top
+// (above "About Me", see .hero in hero.css)
 const portraitQuery = window.matchMedia('(orientation: portrait)');
 const BH_ANCHOR_LANDSCAPE = { x: 0.5, y: 0.0 };
-const BH_ANCHOR_PORTRAIT = { x: 0.5, y: 0.35 };
+const BH_ANCHOR_PORTRAIT = { x: 0.5, y: 0.5 };
+// How far (in Rs) the visible black hole reaches above/below its center: the
+// lensed far side of the disk arcs over the shadow, and the disk's density
+// fades out around here (see blackhole.frag)
+const BH_VISUAL_HALF_HEIGHT = 8.0;
 const BH_SHADOW_SIZE = 0.5;       // max on-screen shadow radius, in world units
 const BH_DISK_INNER = 3.0;        // ISCO
 const BH_DISK_OUTER = 12.0;
@@ -263,12 +304,14 @@ const BH_EXPOSURE = 1.6;
 const BH_EDGE_SOFTNESS = 0.05;    // extra blur on the shadow edge, in Rs
 const BH_BLOOM = 1.0;             // strength of the soft glow around the disk
 const BH_INTRO_TIME = 2.5;        // seconds to fade in
+const BH_LENS_STRENGTH = 1.0;     // scales the stars' Einstein radius (1 = physical)
 const BH_SHADOW_RADIUS = 1.5 * Math.sqrt(3); // critical impact parameter
 const BH_BOUND = BH_DISK_OUTER + 1.0;        // rays outside this sphere aren't traced
 // NOTE: Fixes the disk glow being clipped by a hard vertical edge on the right.
 const BH_QUAD_HALF = BH_BOUND * 1.6;         // covers the bound sphere's (off-axis, stretched) projection
 
 const blackHole = new THREE.Group();
+blackHole.visible = flagParam('bh');
 scene.add(blackHole);
 
 // Frame the disk lives in (disk = local xz plane). Tilted towards the camera
@@ -344,6 +387,130 @@ const blackHoleBloom = new THREE.Mesh(
 blackHoleBloom.renderOrder = 2;
 blackHole.add(blackHoleBloom);
 
+// Adaptive black hole resolution
+// NOTE: Fixes Firefox mobile dropping to 30-40 fps (Chrome holds 60 on the same phone).
+// The ray traced quad is by far the most expensive draw. When the frame rate
+// stays low, it's rendered into a smaller offscreen target and upscaled
+// (the disk is soft, so it hides well); stars and bloom stay full resolution.
+// It only steps down after a sustained slump, and a level that failed isn't
+// retried (until a resize), so it can't oscillate between two levels.
+const BH_LAYER = 1;                           // camera layer of the offscreen pass
+const BH_SCALES = [1, 0.8, 0.65, 0.5, 0.35];  // resolution levels (1 = rendered directly)
+const BH_MIN_FPS = Math.min(50, FPS * 0.9);   // sustained below this -> step down (~40% of 120)
+const BH_UPGRADE_FPS = Math.min(57, FPS * 0.95); // sustained at/above this -> try a step up
+const BH_SAMPLE_MS = 2000;                    // length of each measurement
+const BH_SETTLE_MS = 1000;                    // ignored after start/changes (shader warm-up, resize)
+const BH_STALL_MS = 250;                      // a gap this long (hidden tab, hitch) restarts the sample
+
+// ?bhscale=<n> pins the scale and disables adaptation (see js/debug.js)
+const forcedBlackHoleScale = numberParam('bhscale', NaN);
+let blackHoleLevel = 0;
+const failedBlackHoleLevels = new Set();
+const blackHoleSample = { start: 0, frames: 0, last: 0, settleUntil: -1 };
+
+const blackHoleTarget = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false });
+
+const blackHoleComposite = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 2),
+    new THREE.ShaderMaterial({
+        uniforms: { uTexture: { value: blackHoleTarget.texture } },
+        vertexShader: compositeVertexShader,
+        fragmentShader: compositeFragmentShader,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        // same premultiplied "over" as the quad itself
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.OneFactor,
+        blendDst: THREE.OneMinusSrcAlphaFactor
+    })
+);
+blackHoleComposite.frustumCulled = false;
+blackHoleComposite.renderOrder = blackHoleQuad.renderOrder; // between the stars and the bloom
+blackHoleComposite.visible = false;
+scene.add(blackHoleComposite);
+
+function blackHoleScale() {
+    return Number.isFinite(forcedBlackHoleScale)
+        ? forcedBlackHoleScale
+        : BH_SCALES[blackHoleLevel];
+}
+
+// Sizes the offscreen target and moves the quad in/out of the offscreen pass
+function applyBlackHoleScale() {
+    const scale = blackHoleScale();
+    const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
+    const offscreen = scale < 1;
+
+    blackHoleQuad.layers.set(offscreen ? BH_LAYER : 0);
+    blackHoleComposite.visible = offscreen && blackHole.visible;
+    if (offscreen) {
+        blackHoleTarget.setSize(
+            Math.max(1, Math.round(buffer.x * scale)),
+            Math.max(1, Math.round(buffer.y * scale))
+        );
+    }
+
+    // the shader's anti-aliasing works in the pixels it's actually drawn at
+    blackHoleUniforms.uPixelAngle.value =
+        2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / (buffer.y * scale);
+
+    setRenderInfo(`${buffer.x}×${buffer.y} @ ${renderer.getPixelRatio()}x · black hole ${scale}x`);
+}
+
+function setBlackHoleLevel(level, time) {
+    blackHoleLevel = level;
+    applyBlackHoleScale();
+    blackHoleSample.start = 0;
+    blackHoleSample.settleUntil = time + BH_SETTLE_MS;
+}
+
+// Call once per rendered frame
+function adaptBlackHole(time) {
+    if (Number.isFinite(forcedBlackHoleScale) || !blackHole.visible) return;
+
+    const sample = blackHoleSample;
+    const gap = time - sample.last;
+    sample.last = time;
+
+    if (sample.settleUntil < 0) sample.settleUntil = time + BH_SETTLE_MS;
+    if (time < sample.settleUntil || gap > BH_STALL_MS) {
+        sample.start = 0;
+        return;
+    }
+    if (!sample.start) {
+        sample.start = time;
+        sample.frames = 0;
+        return;
+    }
+
+    sample.frames++;
+    const elapsed = time - sample.start;
+    if (elapsed < BH_SAMPLE_MS) return;
+
+    const fps = sample.frames * 1000 / elapsed;
+    sample.start = 0;
+
+    if (fps < BH_MIN_FPS && blackHoleLevel < BH_SCALES.length - 1) {
+        failedBlackHoleLevels.add(blackHoleLevel);
+        setBlackHoleLevel(blackHoleLevel + 1, time);
+    } else if (fps >= BH_UPGRADE_FPS && blackHoleLevel > 0
+        && !failedBlackHoleLevels.has(blackHoleLevel - 1)) {
+        setBlackHoleLevel(blackHoleLevel - 1, time);
+    }
+}
+
+function render() {
+    if (blackHoleComposite.visible) {
+        camera.layers.set(BH_LAYER);
+        renderer.setRenderTarget(blackHoleTarget);
+        renderer.render(scene, camera); // only the quad (cleared to transparent)
+        renderer.setRenderTarget(null);
+        camera.layers.set(0);
+    }
+    renderer.render(scene, camera);
+}
+
 // Keep the black hole anchored to the right side of the viewport
 function layoutBlackHole() {
     const halfHeight = cameraBasePosition.z * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
@@ -356,12 +523,25 @@ function layoutBlackHole() {
     const shadowRadius = Math.min(BH_SHADOW_SIZE, halfWidth * 0.12);
     blackHole.scale.setScalar(shadowRadius / BH_SHADOW_RADIUS);
 
-    const bufferHeight = renderer.getDrawingBufferSize(new THREE.Vector2()).y;
-    blackHoleUniforms.uPixelAngle.value =
-        2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / bufferHeight;
+    // Expose where the disk starts on screen (px from the viewport's left) so
+    // the page can keep text from running over it (see .about in style.css).
+    // The hole sits on the z = 0 plane, where halfWidth maps to NDC 1.
+    const diskLeft = blackHole.position.x - BH_DISK_OUTER * blackHole.scale.x;
+    const diskLeftPx = (diskLeft / halfWidth + 1) / 2 * window.innerWidth;
+    document.documentElement.style.setProperty('--blackhole-left', `${diskLeftPx}px`);
+
+    // ...and where it ends vertically (px from the viewport's top), so portrait
+    // layouts can start "About Me" below it (see .hero in hero.css)
+    const bottom = blackHole.position.y - BH_VISUAL_HALF_HEIGHT * blackHole.scale.y;
+    const bottomPx = (1 - bottom / halfHeight) / 2 * window.innerHeight;
+    document.documentElement.style.setProperty('--blackhole-bottom', `${bottomPx}px`);
+
+    applyBlackHoleScale(); // the buffer size may have changed
 }
 
 layoutBlackHole();
+
+const lensCenter = new THREE.Vector3();
 
 function updateBlackHole(seconds) {
     blackHoleUniforms.uTime.value = seconds;
@@ -375,6 +555,19 @@ function updateBlackHole(seconds) {
 
     diskFrame.updateWorldMatrix(true, false); // parents too, in case of a resize
     blackHoleUniforms.uWorldToDisk.value.copy(diskFrame.matrixWorld).invert();
+
+    // Lensing of the background stars: where the hole is on screen and how big
+    // its Einstein ring is. For sources at infinity thetaE = sqrt(2 Rs / D).
+    camera.updateMatrixWorld();
+    blackHole.getWorldPosition(lensCenter).project(camera);
+    starUniforms.uLensCenter.value.set(lensCenter.x, lensCenter.y);
+
+    const schwarzschildRadius = blackHole.scale.x; // group scale = Rs in world units
+    const distance = camera.position.distanceTo(blackHole.position);
+    const einsteinAngle = Math.sqrt(2 * schwarzschildRadius / distance) * BH_LENS_STRENGTH;
+    starUniforms.uLensEinstein.value =
+        Math.tan(einsteinAngle) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    starUniforms.uLensAspect.value = camera.aspect;
 }
 
 // Resize handling
@@ -382,6 +575,8 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    // a new size (e.g. rotating the phone) may afford levels that failed before
+    failedBlackHoleLevels.clear();
     layoutBlackHole();
 
     // NOTE: Fixes the black hole flickering while resizing (entering/leaving fullscreen).
@@ -389,12 +584,10 @@ window.addEventListener('resize', () => {
     // the next (possibly frame-capped) animation frame, which shows up as a
     // blank flicker, e.g. when entering/leaving fullscreen.
     updateBlackHole(performance.now() * 0.001); // picks up the new layout
-    renderer.render(scene, camera);
+    render();
 });
 
 // Animation loop
-const FPS = 120;
-const FRAME_TIME = 1000 / FPS;
 let lastTime = 0;
 
 const mouse = { x: 0, y: 0 };
@@ -420,8 +613,15 @@ const CAMERA_SMOOTHING = 0.05; // lower = smoother
 function animate(time) {
     requestAnimationFrame(animate);
 
-    if (time - lastTime < FRAME_TIME) return;
-    lastTime = time;
+    // NOTE: Fixes uneven pacing when the cap is below the display rate.
+    // Advance by whole frames instead of jumping to `time` (resyncing after a
+    // stall), with 1 ms of slack: rAF timestamps jitter, so at 30 fps on a
+    // 60 Hz screen an exact comparison would randomly skip an extra frame.
+    if (time - lastTime < FRAME_TIME - 1) return;
+    lastTime = Math.max(lastTime + FRAME_TIME, time - FRAME_TIME);
+
+    reportFrame(time);
+    adaptBlackHole(time);
 
     // particle motion
     // NOTE: Fixes jittery star motion: per-frame steps + the FPS cap made the speed uneven.
@@ -445,7 +645,7 @@ function animate(time) {
 
     updateBlackHole(time * 0.001);
 
-    renderer.render(scene, camera);
+    render();
 }
 
 requestAnimationFrame(animate);
