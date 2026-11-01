@@ -110,3 +110,68 @@ h1::before {
 
 .debug-badge--ok  { color: var(--success); }
 .debug-badge--off { color: var(--failure); }
+
+/* "Hide all text" toggle (js/text-toggle.js) */
+.text-toggle {
+    position: fixed;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    z-index: 10;
+    display: grid;
+    place-items: center;
+    width: 2.75rem;  /* comfortable touch target */
+    height: 2.75rem;
+    padding: 0;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    color: hsl(0, 0%, 70%);
+    background: hsla(210, 40%, 5%, 0.4);
+    opacity: 0.35;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+.text-toggle:hover,
+.text-toggle:focus-visible {
+    opacity: 0.85;
+}
+
+.text-toggle:focus-visible {
+    outline: 2px solid var(--foreground);
+    outline-offset: 2px;
+}
+
+.text-toggle-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* show the icon for the action the button will take */
+.text-toggle-icon--show,
+.text-hidden .text-toggle-icon--hide {
+    display: none;
+}
+
+.text-hidden .text-toggle-icon--show {
+    display: block;
+}
+
+/* Fade the text out; visibility (delayed until the fade ends) also takes it
+ * out of the accessibility tree and stops it catching clicks. The layout is
+ * kept, so the scroll position doesn't jump. */
+.content,
+.debug-badge {
+    transition: opacity 0.4s ease, visibility 0s linear 0s;
+}
+
+.text-hidden .content,
+.text-hidden .debug-badge {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.4s ease, visibility 0s linear 0.4s;
+}
