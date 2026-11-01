@@ -9,6 +9,8 @@
 //   ?bhscale=<n>  pin the black hole's resolution scale (0..1), no adapting
 //   ?stars=0      hide the stars
 //   ?vignette=0   remove the CSS vignette overlay
+//   ?meteors=0    disable shooting stars
+//   ?meteorgap=<s> average seconds between shooting stars (default: ~16)
 //   ?hero=0       stop the hero word animation
 
 export const params = new URLSearchParams(location.search);

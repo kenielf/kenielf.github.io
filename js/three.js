@@ -54,7 +54,9 @@ const [
     bloomVertexShader,
     bloomFragmentShader,
     compositeVertexShader,
-    compositeFragmentShader
+    compositeFragmentShader,
+    meteorVertexShader,
+    meteorFragmentShader
 ] = await Promise.all([
     'noise.glsl',
     'star_drift_pars.vert',
@@ -66,7 +68,9 @@ const [
     'bloom.vert',
     'bloom.frag',
     'composite.vert',
-    'composite.frag'
+    'composite.frag',
+    'meteor.vert',
+    'meteor.frag'
 ].map(loadShader));
 
 THREE.ShaderChunk.bh_noise = noiseChunk;
@@ -500,6 +504,162 @@ function adaptBlackHole(time) {
     }
 }
 
+// Shooting stars
+// Rare streaks drawn in screen space (CSS px): a strong, wide head with a
+// weak, long tail. The head flares up towards the end and is at its brightest
+// just before it fades away. They're far behind the black hole: its shadow
+// covers them and they're lensed like the stars (see shaders/meteor.frag).
+const METEOR_POOL = 2;                   // at most this many at once
+const METEOR_GAP = numberParam('meteorgap', NaN); // ?meteorgap=<s> forces the average gap (testing)
+const METEOR_GAP_MIN = Number.isFinite(METEOR_GAP) ? METEOR_GAP * 0.5 : 8;  // seconds
+const METEOR_GAP_MAX = Number.isFinite(METEOR_GAP) ? METEOR_GAP * 1.5 : 25;
+const METEOR_DURATION = [0.5, 1.2];      // seconds on screen
+const METEOR_TRAVEL = [0.15, 0.4];       // distance covered, fraction of the screen diagonal
+const METEOR_TAIL = [0.03, 0.12];        // max tail length, fraction of the screen diagonal
+const METEOR_WIDTH = [1.6, 2.8];         // head glow radius, CSS px
+const METEOR_ANGLE = [15, 50];           // degrees below the horizon
+const METEOR_PEAK = 0.85;                // point of the flight where the head is brightest
+
+const meteorsEnabled = flagParam('meteors')
+    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const randomIn = ([min, max]) => THREE.MathUtils.lerp(min, max, Math.random());
+
+const meteorGeometry = new THREE.PlaneGeometry(1, 1);
+const meteors = [];
+
+for (let i = 0; i < METEOR_POOL; i++) {
+    const uniforms = {
+        uHead:       { value: new THREE.Vector2() },
+        uDir:        { value: new THREE.Vector2() },
+        uLength:     { value: 0 },
+        uWidth:      { value: 2 },
+        uBrightness: { value: 0 },
+        uViewport:   { value: new THREE.Vector2(1, 1) },
+        uBox:        { value: new THREE.Vector4() },
+        // same lens as the stars
+        uLensCenter:   starUniforms.uLensCenter,
+        uLensEinstein: starUniforms.uLensEinstein,
+        uLensAspect:   starUniforms.uLensAspect
+    };
+
+    const mesh = new THREE.Mesh(meteorGeometry, new THREE.ShaderMaterial({
+        uniforms,
+        vertexShader: meteorVertexShader,
+        fragmentShader: meteorFragmentShader,
+        // NOTE: Fixes shooting stars never showing up. The vertex shader maps the
+        // quad into y-down CSS pixels, which mirrors it: the triangles end up
+        // back-facing and were culled.
+        side: THREE.DoubleSide,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        // premultiplied additive, alpha grows with color (see the star material)
+        blending: THREE.CustomBlending,
+        blendSrc: THREE.OneFactor,
+        blendDst: THREE.OneFactor
+    }));
+    mesh.frustumCulled = false; // positioned in the vertex shader
+    mesh.renderOrder = 0.5;     // after the stars, behind the black hole
+    mesh.visible = false;
+    scene.add(mesh);
+
+    meteors.push({ mesh, uniforms, start: 0, duration: 1, origin: new THREE.Vector2(), travel: 0, tail: 0 });
+}
+
+let nextMeteorAt = -1;
+
+const meteorTail = new THREE.Vector2();
+const lensCenterPx = new THREE.Vector2();
+
+// Screen box the meteor's quad has to cover (CSS px)
+function updateMeteorBox(uniforms) {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const pad = uniforms.uWidth.value * 3;
+    const head = uniforms.uHead.value;
+    meteorTail.copy(head).addScaledVector(uniforms.uDir.value, -uniforms.uLength.value);
+
+    let minX = Math.min(head.x, meteorTail.x) - pad;
+    let minY = Math.min(head.y, meteorTail.y) - pad;
+    let maxX = Math.max(head.x, meteorTail.x) + pad;
+    let maxY = Math.max(head.y, meteorTail.y) + pad;
+
+    const einstein = uniforms.uLensEinstein.value * height / 2; // NDC-y units -> px
+    if (einstein > 0) {
+        // the primary image is pushed out by at most thetaE...
+        minX -= einstein; minY -= einstein;
+        maxX += einstein; maxY += einstein;
+
+        // ...and the secondary one lands inside the Einstein ring
+        const center = uniforms.uLensCenter.value;
+        lensCenterPx.set((center.x + 1) / 2 * width, (1 - center.y) / 2 * height);
+        const reach = einstein + pad;
+        minX = Math.min(minX, lensCenterPx.x - reach);
+        minY = Math.min(minY, lensCenterPx.y - reach);
+        maxX = Math.max(maxX, lensCenterPx.x + reach);
+        maxY = Math.max(maxY, lensCenterPx.y + reach);
+    }
+
+    // no point covering anything off screen
+    uniforms.uBox.value.set(
+        Math.max(minX, 0), Math.max(minY, 0),
+        Math.min(maxX, width), Math.min(maxY, height)
+    );
+}
+
+function spawnMeteor(meteor, seconds) {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const diagonal = Math.hypot(width, height);
+
+    // heading down and to the left or right
+    const angle = THREE.MathUtils.degToRad(randomIn(METEOR_ANGLE));
+    const side = Math.random() < 0.5 ? -1 : 1;
+    meteor.uniforms.uDir.value.set(Math.cos(angle) * side, Math.sin(angle));
+
+    meteor.origin.set(width * randomIn([0.1, 0.9]), height * randomIn([0.0, 0.5]));
+    meteor.travel = diagonal * randomIn(METEOR_TRAVEL);
+    meteor.tail = diagonal * randomIn(METEOR_TAIL);
+    meteor.duration = randomIn(METEOR_DURATION);
+    meteor.start = seconds;
+    meteor.uniforms.uWidth.value = randomIn(METEOR_WIDTH);
+    meteor.mesh.visible = true;
+}
+
+function updateMeteors(seconds) {
+    if (!meteorsEnabled) return;
+
+    if (nextMeteorAt < 0) nextMeteorAt = seconds + randomIn([METEOR_GAP_MIN, METEOR_GAP_MAX]);
+    if (seconds >= nextMeteorAt) {
+        const free = meteors.find((meteor) => !meteor.mesh.visible);
+        if (free) spawnMeteor(free, seconds);
+        nextMeteorAt = seconds + randomIn([METEOR_GAP_MIN, METEOR_GAP_MAX]);
+    }
+
+    for (const meteor of meteors) {
+        if (!meteor.mesh.visible) continue;
+
+        const progress = (seconds - meteor.start) / meteor.duration;
+        if (progress >= 1 || progress < 0) {
+            meteor.mesh.visible = false;
+            continue;
+        }
+
+        const distance = meteor.travel * progress;
+        const { uniforms } = meteor;
+        uniforms.uHead.value.copy(meteor.origin).addScaledVector(uniforms.uDir.value, distance);
+        uniforms.uLength.value = Math.min(meteor.tail, distance);
+        uniforms.uViewport.value.set(window.innerWidth, window.innerHeight);
+        updateMeteorBox(uniforms);
+
+        // quick fade in, flare up to the peak, then a fast fade out
+        const fadeIn = THREE.MathUtils.smoothstep(progress, 0, 0.1);
+        const flare = THREE.MathUtils.lerp(0.35, 1, Math.min(progress / METEOR_PEAK, 1));
+        const fadeOut = 1 - THREE.MathUtils.smoothstep(progress, METEOR_PEAK, 1);
+        uniforms.uBrightness.value = fadeIn * flare * fadeOut;
+    }
+}
+
 function render() {
     if (blackHoleComposite.visible) {
         camera.layers.set(BH_LAYER);
@@ -644,6 +804,7 @@ function animate(time) {
     camera.lookAt(0, 0, 0);
 
     updateBlackHole(time * 0.001);
+    updateMeteors(time * 0.001);
 
     render();
 }
